@@ -153,6 +153,14 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 也可以直接双击 `scripts\start-all.bat`，它会依次启动 MySQL、服务端并打开浏览器。
 
+需要让局域网其它设备或公网 IPv6 访问时，改用 `run_server.py` 启动，它在同一个端口上同时监听 IPv4 与 IPv6：
+
+```bash
+.venv\Scripts\python.exe run_server.py
+```
+
+> Windows 上直接给 uvicorn 传 `--host ::` **不能**实现双栈：Python 创建 IPv6 套接字时 `IPV6_V6ONLY` 默认为 1，结果只接受 IPv6 连接，IPv4（含 `127.0.0.1`）会被直接拒掉。`run_server.py` 中显式关闭了该选项。
+
 > `scripts\start-db.bat` 假设 `mysql\` 目录下是便携版 MySQL（该目录未随仓库提供，已在 `.gitignore` 中排除）。若使用自己安装的 MySQL，跳过该脚本，只启动服务端并把 `.env` 指向你的数据库。监听地址以启动命令的 `--host` 为准，`.env` 中的 `SERVER_HOST` 仅供代码读取。
 
 ### 5. 访问入口
@@ -254,6 +262,7 @@ scripts/                 Windows 一键脚本
   init-db.bat            初始化数据库
 
 requirements.txt         Python 依赖
+run_server.py            双栈启动器：同一端口同时监听 IPv4 与 IPv6
 .env.example             配置模板（复制为 .env 使用）
 ```
 
@@ -277,9 +286,11 @@ requirements.txt         Python 依赖
 
 用 `init_db.py` 不会覆盖已有账号。可临时用 Python 生成 bcrypt 哈希后直接更新数据库，或删掉 `users` 表中对应记录后重新执行初始化。
 
-**能让局域网内其它设备访问吗**
+**能让局域网其它设备或公网 IPv6 访问吗**
 
-把启动命令的 `--host` 改为 `0.0.0.0`（或 `::` 以同时支持 IPv6），在防火墙放行对应端口，其它设备用 `http://本机IP:8000/` 访问。注意此时应使用强密码，并建议通过 HTTPS 暴露到公网。
+用 `run_server.py` 启动（同一端口同时监听 IPv4 与 IPv6），在防火墙放行 8000 入站，其它设备即可用 `http://本机IP:8000/` 或 `http://[本机IPv6]:8000/` 访问。
+
+此时务必使用强密码。直接以 HTTP 暴露到公网会让 token 明文传输，建议套一层 HTTPS（内网穿透或反向代理）。另外若光猫 / 路由器开启了 IPv6 防火墙，还需在其中放行入站，否则外网依然连不进来。
 
 ---
 
