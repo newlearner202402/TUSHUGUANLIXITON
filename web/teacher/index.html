@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教师端 - 图书管理系统</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">图书管理系统 · 教师端</div>
+    <span class="badge" id="whoami">—</span>
+    <div class="spacer"></div>
+    <button class="sm" onclick="logout()">退出登录</button>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar" id="sidebar">
+      <button data-view="search" class="active">馆藏检索</button>
+      <button data-view="catalog">图书录入 / 编目</button>
+      <button data-view="borrow">借还办理</button>
+      <button data-view="records">借阅记录</button>
+      <button data-view="overdue">逾期清单</button>
+      <button data-view="stats">统计总览</button>
+      <button data-view="users" class="hidden" id="navUsers">用户管理</button>
+      <button data-view="invites" class="hidden" id="navInvites">教师邀请码</button>
+      <button data-view="pwd">修改密码</button>
+    </div>
+
+    <div class="main">
+      <div id="toast"></div>
+
+      <!-- 检索 -->
+      <div id="view-search">
+        <div class="card">
+          <h2>馆藏检索</h2>
+          <div class="row mt">
+            <input id="q" placeholder="书名 / 作者 / 出版社 / ISBN / 中图法号" style="flex:1;min-width:220px"
+                   autocomplete="off">
+            <select id="cat" style="width:220px"><option value="">全部分类</option></select>
+            <label class="row" style="margin:0;white-space:nowrap">
+              <input type="checkbox" id="onlyAvail" style="width:auto"> 只看在馆
+            </label>
+            <button class="primary" id="btnSearch">搜索</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>检索结果</h3>
+            <span class="muted small" id="searchCount"></span>
+            <div class="spacer"></div>
+            <span class="muted small" id="pickedCount">已选 0 种</span>
+            <button class="sm danger" id="btnBatchDelete">批量删除选中</button>
+          </div>
+          <div id="batchResult"></div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="chkAll" title="全选本页" style="width:auto"></th>
+              <th>书名</th><th>作者</th><th>出版社</th><th>分类</th><th>在馆</th><th></th></tr></thead>
+            <tbody id="searchRows"><tr><td colspan="7" class="empty">输入关键词后点击搜索</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="searchPager"></div>
+        </div>
+      </div>
+
+      <!-- 编目 -->
+      <div id="view-catalog" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2 id="catalogTitle">图书录入</h2>
+            <div class="spacer"></div>
+            <button class="sm hidden" id="btnCancelEdit">取消编辑</button>
+          </div>
+          <div id="catalogMsg"></div>
+          <div class="form-grid">
+            <div class="field"><label>书名 *</label><input id="f_title"></div>
+            <div class="field"><label>作者</label><input id="f_author"></div>
+            <div class="field"><label>出版社</label><input id="f_publisher"></div>
+            <div class="field"><label>ISBN</label><input id="f_isbn" placeholder="9787115546081"></div>
+            <div class="field"><label>中图法分类号</label><select id="f_clc"><option value="">未分类</option></select></div>
+            <div class="field"><label>出版日期</label><input id="f_pubdate" type="date"></div>
+            <div class="field"><label>定价（元）</label><input id="f_price" type="number" step="0.01" min="0"></div>
+            <div class="field"><label>馆藏位置</label><input id="f_location" placeholder="A区-3排-2层"></div>
+            <div class="field"><label>初始副本数量（0 ~ 500）</label><input id="f_copies" type="number" min="0" max="500" step="1" value="1" autocomplete="off"></div>
+          </div>
+          <div class="field"><label>内容简介</label><textarea id="f_summary" rows="3"></textarea></div>
+          <button class="primary" id="btnSaveBook">保存图书</button>
+          <p class="muted small mt">馆藏条码按「分类号 + 6 位流水」自动生成，例如 TP311000008。同一本书的多册会自动连续编号。</p>
+        </div>
+      </div>
+
+      <!-- 借还办理 -->
+      <div id="view-borrow" class="hidden">
+        <div class="card" style="max-width:620px">
+          <h2>借还办理</h2>
+          <p class="muted small">扫书上的馆藏条码即可，直接给自己办理。代他人借书只开放给管理员，
+             教师和学生账号看不到「读者」这一栏。</p>
+          <div id="borrowMsg"></div>
+          <div class="field hidden" id="bUserBox"><label>读者学号 / 工号（留空 = 自己）</label>
+            <input id="b_user" placeholder="例如 2024001" autocomplete="off"></div>
+          <div class="field"><label>馆藏条码</label>
+            <input id="b_code" placeholder="扫描或输入条码，例如 TP311000001" autocomplete="off" autofocus></div>
+          <div class="row">
+            <button class="primary" id="btnBorrow" style="flex:1">借 书</button>
+            <button id="btnReturn" style="flex:1">还 书</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 借阅记录 -->
+      <div id="view-records" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>借阅记录</h2></div>
+          <div class="row mb">
+            <input id="r_kw" placeholder="学号 / 姓名 / 书名 / 条码" style="flex:1;min-width:200px"
+                   autocomplete="off">
+            <select id="r_status" style="width:140px">
+              <option value="">全部状态</option>
+              <option value="borrowed">在借中</option>
+              <option value="overdue">已逾期</option>
+              <option value="returned">已归还</option>
+            </select>
+            <button class="primary" id="btnQueryRecords">查询</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>读者</th><th>书名</th><th>条码</th><th>借出</th><th>应还</th><th>归还</th><th>状态</th></tr></thead>
+            <tbody id="recordRows"><tr><td colspan="7" class="empty">点击查询</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="recordPager"></div>
+        </div>
+      </div>
+
+      <!-- 逾期清单 -->
+      <div id="view-overdue" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>逾期未还清单</h2>
+            <div class="spacer"></div>
+            <button class="sm" id="btnReloadOverdue">刷新</button></div>
+          <div class="alert warn">逾期只做提醒，不产生费用。归还时系统会提示已逾期天数。</div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>读者</th><th>书名</th><th>条码</th><th>应还日期</th><th>逾期天数</th></tr></thead>
+            <tbody id="overdueRows"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- 统计 -->
+      <div id="view-stats" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>统计总览</h2>
+            <div class="spacer"></div><button class="sm" id="btnReloadStats">刷新</button></div>
+          <div class="stat-grid" id="statBox"><span class="muted">加载中…</span></div>
+        </div>
+      </div>
+
+      <!-- 用户管理 -->
+      <div id="view-users" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>用户管理</h2>
+            <div class="spacer"></div>
+            <button class="sm" id="btnShowRange">范围生成学生号</button>
+            <button class="sm" id="btnShowPaste">粘贴名单建号</button>
+            <button class="sm" id="btnShowImport">CSV 批量导入</button>
+            <button class="sm primary" id="btnShowCreate">新增用户</button>
+          </div>
+          <div id="usersMsg"></div>
+
+          <div id="rangeBox" class="hidden card" style="background:#fafbfc">
+            <h3>按范围批量生成学生账号</h3>
+            <p class="muted small">学号 = 4 位届数 + 2 位班号 + 2 位序号。例如 2024 届、1 个班、每班 40 人，
+               生成 20240101 ~ 20240140。默认密码与姓名都等于学号（纯数字，如 20240142），不含汉字。</p>
+            <div class="form-grid">
+              <div class="field"><label>届数 *</label>
+                <input id="rg_year" type="number" min="2000" max="2100" value="2024" autocomplete="off"></div>
+              <div class="field"><label>班级数量 *</label>
+                <input id="rg_classes" type="number" min="1" max="99" value="1" autocomplete="off"></div>
+              <div class="field"><label>每班人数 *</label>
+                <input id="rg_per" type="number" min="1" max="99" value="40" autocomplete="off"></div>
+              <div class="field"><label>院系（可选）</label><input id="rg_dept"></div>
+            </div>
+            <p class="muted small" id="rg_preview"></p>
+            <p class="muted small">密码要逐个加密（这是为了安全刻意放慢的），人数越多越慢：
+               约每 100 人 10 秒。生成期间按钮会显示「生成中…」，请勿重复点击。</p>
+            <button class="primary sm" id="btnRange">生成</button>
+            <div id="rangeResult" class="mt"></div>
+          </div>
+
+          <div id="pasteBox" class="hidden card" style="background:#fafbfc">
+            <h3>粘贴名单批量建号</h3>
+            <p class="muted small">每行一条，格式「学号,姓名」或「学号,姓名,手机号」，
+               逗号或 Tab 分隔均可；姓名可省略，省略时用学号兜底。默认密码与学号相同。</p>
+            <div class="field"><label>名单</label>
+              <textarea id="ps_text" rows="7" placeholder="20240101,张三&#10;20240102,李四,13800001111"></textarea></div>
+            <div class="field"><label>院系（可选）</label><input id="ps_dept"></div>
+            <button class="primary sm" id="btnPaste">生成</button>
+            <div id="pasteResult" class="mt"></div>
+          </div>
+
+          <div id="importBox" class="hidden card" style="background:#fafbfc">
+            <h3>CSV 批量导入</h3>
+            <p class="muted small">表头需为：<code>username,password,real_name,role,dept,phone,max_borrow</code>，
+               编码用 UTF-8 或 GBK。role 可填 student / teacher（管理员账号不接受导入）。</p>
+            <input type="file" id="csvFile" accept=".csv,text/csv" style="margin-bottom:10px">
+            <button class="primary sm" id="btnImport">开始导入</button>
+            <div id="importResult" class="mt"></div>
+          </div>
+
+          <div id="createBox" class="hidden card" style="background:#fafbfc">
+            <h3>新增用户</h3>
+            <div class="form-grid">
+              <div class="field"><label>学号 / 工号 *</label><input id="u_username" autocomplete="off"></div>
+              <div class="field"><label>姓名 *</label><input id="u_realname"></div>
+              <div class="field"><label>初始密码 *</label>
+                <input id="u_password" value="123456" autocomplete="new-password"></div>
+              <div class="field"><label>角色</label><select id="u_role">
+                <option value="student">学生</option><option value="teacher">教师</option></select></div>
+              <div class="field"><label>院系 / 部门</label><input id="u_dept"></div>
+              <div class="field"><label>可借上限（留空按角色默认）</label><input id="u_max" type="number" min="0"></div>
+            </div>
+            <button class="primary sm" id="btnCreateUser">创建</button>
+          </div>
+
+          <div class="row mb">
+            <input id="u_kw" placeholder="学号 / 姓名 / 院系" style="flex:1;min-width:200px"
+                     autocomplete="off">
+            <select id="u_filterRole" style="width:140px">
+              <option value="">全部角色</option><option value="student">学生</option>
+              <option value="teacher">教师</option>
+            </select>
+            <button class="primary" id="btnQueryUsers">查询</button>
+            <span class="muted small" id="uPickedCount">已选 0 个</span>
+            <span class="muted small">管理员账号不在此列表，且不可禁用 / 删除 / 重置密码</span>
+            <button class="sm danger" id="btnBatchDelUsers">批量删除选中</button>
+          </div>
+          <div id="batchUserResult"></div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="chkAllUsers" title="全选本页" style="width:auto"></th>
+              <th>学号/工号</th><th>姓名</th><th>角色</th><th>院系</th><th>可借上限</th><th>状态</th><th></th></tr></thead>
+            <tbody id="userRows"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="userPager"></div>
+        </div>
+      </div>
+
+      <!-- 教师邀请码 -->
+      <div id="view-invites" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>教师注册邀请码</h2>
+            <div class="spacer"></div>
+            <button class="sm primary" id="btnShowInviteCreate">生成邀请码</button>
+          </div>
+          <div id="invitesMsg"></div>
+          <p class="muted small">把邀请码发给需要注册的教师，TA 打开
+            <a href="/register.html" target="_blank">注册页</a>
+            填学号/工号、姓名、密码即可开通教师账号。一码一用，过期即失效。</p>
+
+          <div id="inviteCreateBox" class="hidden card" style="background:#fafbfc">
+            <h3>生成邀请码</h3>
+            <div class="form-grid">
+              <div class="field"><label>生成数量</label>
+                <input id="iv_count" type="number" min="1" max="100" value="1" autocomplete="off"></div>
+              <div class="field"><label>有效期（天）</label>
+                <input id="iv_days" type="number" min="1" max="365" value="7" autocomplete="off"></div>
+              <div class="field"><label>备注</label>
+                <input id="iv_note" placeholder="例如：发给计算机学院王老师"></div>
+            </div>
+            <button class="primary sm" id="btnCreateInvites">生成</button>
+            <div id="inviteCreateResult" class="mt"></div>
+          </div>
+
+          <div class="row mb">
+            <select id="iv_filter" style="width:160px">
+              <option value="">全部状态</option>
+              <option value="unused">未使用</option>
+              <option value="used">已使用</option>
+              <option value="expired">已过期</option>
+            </select>
+            <button class="primary" id="btnQueryInvites">查询</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>邀请码</th><th>备注</th><th>状态</th><th>有效期至</th><th>使用者</th><th></th></tr></thead>
+            <tbody id="inviteRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="invitePager"></div>
+        </div>
+      </div>
+
+      <!-- 改密码 -->
+      <div id="view-pwd" class="hidden">
+        <div class="card" style="max-width:460px">
+          <h2>修改密码</h2>
+          <div id="pwdMsg"></div>
+          <div class="field"><label>原密码</label>
+            <input type="password" id="oldPwd" autocomplete="off"></div>
+          <div class="field"><label>新密码（至少 6 位）</label>
+            <input type="password" id="newPwd" autocomplete="new-password"></div>
+          <div class="field"><label>确认新密码</label>
+            <input type="password" id="newPwd2" autocomplete="new-password"></div>
+          <button class="primary" id="btnPwd">确认修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal" class="hidden" style="position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px">
+    <div class="card" style="max-width:700px;width:100%;max-height:85vh;overflow:auto">
+      <div class="card-head"><h3 id="modalTitle">图书详情</h3><div class="spacer"></div>
+        <button class="sm" onclick="el('modal').classList.add('hidden')">关闭</button></div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script>
+    let me = null;
+    let editingId = null;
+    let categories = [];
+    let searchPage = 1, recordPage = 1, userPage = 1;
+
+    const STATUS_TAG = {
+      available: '<span class="tag ok">在馆可借</span>',
+      borrowed: '<span class="tag warn">已借出</span>',
+      lost: '<span class="tag danger">遗失</span>',
+      repair: '<span class="tag warn">修补中</span>',
+      discarded: '<span class="tag">已注销</span>',
+    };
+
+    // 防连点：请求没回来之前按钮保持禁用，避免双击发出两次同样的请求
+    // （比如两次「范围生成」同时建同一批学号，数据库唯一索引会拦下其中一个）
+    // 批量建号要逐个加密密码（每人约 0.4 秒），所以按钮上顺手显示「生成中…」，
+    // 让用户知道是在等而不是卡死了。
+    async function once(btn, fn, busyText) {
+      if (btn.disabled) return;
+      const original = btn.textContent;
+      btn.disabled = true;
+      if (busyText) btn.textContent = busyText;
+      try {
+        await fn();
+      } finally {
+        btn.disabled = false;
+        if (busyText) btn.textContent = original;
+      }
+    }
+
+    // ---------- 导航 ----------
+    document.querySelectorAll('.sidebar button').forEach(btn => {
+      btn.onclick = () => switchView(btn.dataset.view);
+    });
+
+    function switchView(v) {
+      document.querySelectorAll('.sidebar button').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === v);
+      });
+      ['search', 'catalog', 'borrow', 'records', 'overdue', 'stats', 'users', 'invites', 'pwd']
+        .forEach(x => el('view-' + x).classList.toggle('hidden', x !== v));
+      if (v === 'records') queryRecords(1);
+      if (v === 'overdue') loadOverdue();
+      if (v === 'stats') loadStats();
+      if (v === 'users') queryUsers(1);
+      if (v === 'invites') queryInvites(1);
+    }
+
+    (async function init() {
+      me = await requireLogin('teacher');
+      if (!me) return;
+      el('whoami').textContent = me.real_name + '（' + ROLE_CN[me.role] + '）';
+      if (me.role === 'admin') {
+        el('navUsers').classList.remove('hidden');
+        el('navInvites').classList.remove('hidden');
+        // 代他人借书只开放给管理员，「读者学号 / 工号」这一栏也只给管理员显示
+        el('bUserBox').classList.remove('hidden');
+      }
+      try {
+        categories = await api('/categories');
+        const opts = categories.map(c =>
+          `<option value="${esc(c.code)}">${esc(c.code)} ${esc(c.name)}</option>`).join('');
+        el('cat').innerHTML = '<option value="">全部分类</option>' + opts;
+        el('f_clc').innerHTML = '<option value="">未分类</option>' + opts;
+      } catch (e) { /* 忽略 */ }
+    })();
+
+    // ---------- 检索 ----------
+    async function doSearch(page) {
+      searchPage = page || 1;
+      const tbody = el('searchRows');
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">查询中…</td></tr>';
+      el('batchResult').innerHTML = '';
+      try {
+        const r = await api('/books' + qs({
+          q: el('q').value.trim(), category: el('cat').value,
+          only_available: el('onlyAvail').checked, page: searchPage, size: 15,
+        }));
+        el('searchCount').textContent = '共 ' + r.total + ' 种';
+        tbody.innerHTML = r.items.length ? r.items.map(b => `<tr>
+          <td><input type="checkbox" class="rowChk" value="${b.id}" style="width:auto"></td>
+          <td><strong>${esc(b.title)}</strong>${b.isbn ? '<div class="muted small">ISBN ' + esc(b.isbn) + '</div>' : ''}</td>
+          <td>${esc(b.author || '—')}</td><td>${esc(b.publisher || '—')}</td>
+          <td>${b.clc_code ? esc(b.clc_code) : '—'}</td>
+          <td>${b.available_copies > 0
+                ? '<span class="tag ok">在馆 ' + b.available_copies + '/' + b.total_copies + '</span>'
+                : '<span class="tag danger">已全部借出</span>'}</td>
+          <td><button class="ghost sm" onclick="showDetail(${b.id})">详情</button>
+              <button class="ghost sm" onclick="startEdit(${b.id})">编辑</button></td>
+        </tr>`).join('') : '<tr><td colspan="7" class="empty">没有找到符合条件的图书</td></tr>';
+        el('chkAll').checked = false;
+        refreshPicked();
+        renderPager('searchPager', r.total, r.page, r.size, doSearch);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+    }
+
+    // ---------- 批量删除图书 ----------
+    function pickedIds() {
+      return Array.from(document.querySelectorAll('.rowChk:checked')).map(c => Number(c.value));
+    }
+
+    function refreshPicked() {
+      const n = pickedIds().length;
+      el('pickedCount').textContent = '已选 ' + n + ' 种';
+      el('btnBatchDelete').disabled = n === 0;
+    }
+
+    el('chkAll').onclick = () => {
+      const on = el('chkAll').checked;
+      document.querySelectorAll('.rowChk').forEach(c => { c.checked = on; });
+      refreshPicked();
+    };
+
+    document.addEventListener('change', e => {
+      if (e.target.classList && e.target.classList.contains('rowChk')) refreshPicked();
+    });
+
+    el('btnBatchDelete').onclick = async () => {
+      const ids = pickedIds();
+      if (!ids.length) return;
+      if (!confirm('确定删除选中的 ' + ids.length + ' 种图书？\n书还在外借（未归还）的会自动跳过，并在下方列出原因。\n删除会同时清掉这些书已归还的借阅记录。')) return;
+      el('btnBatchDelete').disabled = true;
+      el('batchResult').innerHTML = '<p class="muted small">删除中…</p>';
+      try {
+        const r = await api('/books/batch-delete', { method: 'POST', body: { ids } });
+        // 必须先刷新列表再写结果：doSearch 会清空 batchResult，
+        // 顺序反了会把「删了几本 / 哪几本被跳过、为什么」当场抹掉。
+        await doSearch(searchPage);
+        el('batchResult').innerHTML =
+          '<div class="alert ' + (r.deleted ? 'ok' : 'warn') + '">已删除 ' + r.deleted +
+          ' 种' + (r.skipped.length ? '，跳过 ' + r.skipped.length + ' 种' : '') + '。</div>' +
+          (r.skipped.length
+            ? '<div class="alert warn"><strong>以下图书未删除（列表里仍在）：</strong><div class="small mt">' +
+              r.skipped.map(s => esc((s.title || ('编号 ' + s.id)) + '：' + s.reason)).join('<br>') +
+              '</div></div>'
+            : '');
+      } catch (err) {
+        el('batchResult').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+        refreshPicked();
+      }
+    };
+    refreshPicked();
+
+    window.showDetail = async function (id) {
+      el('modalTitle').textContent = '图书详情';
+      el('modalBody').innerHTML = '<p class="muted">加载中…</p>';
+      el('modal').classList.remove('hidden');
+      try {
+        const b = await api('/books/' + id);
+        el('modalTitle').textContent = b.title;
+        el('modalBody').innerHTML = `
+          <p class="muted">${esc(b.author || '未知作者')} · ${esc(b.publisher || '未知出版社')}
+            ${b.pub_date ? ' · ' + fmtDate(b.pub_date) : ''}${b.price ? ' · 定价 ' + b.price + ' 元' : ''}</p>
+          <p class="muted small">ISBN ${esc(b.isbn || '—')} ｜ 中图法 ${esc(b.clc_code || '—')}
+            ${b.category_name ? '（' + esc(b.category_name) + '）' : ''}</p>
+          ${b.summary ? '<p>' + esc(b.summary) + '</p>' : ''}
+          <h4 class="mt">馆藏 ${b.available_copies}/${b.total_copies} 册在馆</h4>
+          <div class="row mb">
+            <input type="number" id="addCount" value="1" min="1" max="500" style="width:90px">
+            <input id="addLoc" placeholder="馆藏位置（可选）" style="width:180px">
+            <button class="sm primary" onclick="addCopies(${b.id})">增加副本</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>条码</th><th>馆藏位置</th><th>状态</th><th></th></tr></thead>
+            <tbody>${b.copies_list.map(c => `<tr>
+              <td>${esc(c.barcode)}</td><td>${esc(c.location || '—')}</td>
+              <td>${STATUS_TAG[c.status] || esc(c.status)}</td>
+              <td><button class="ghost sm" onclick="delCopy(${c.id},${b.id})">删除</button></td>
+            </tr>`).join('')}</tbody></table></div>
+          <p class="muted small mt">提示：正在借出中的副本不能删除或改状态，需先办理归还；删除副本会一并清掉它已归还的借阅记录。</p>`;
+      } catch (err) {
+        el('modalBody').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    window.addCopies = async function (bookId) {
+      try {
+        const n = parseInt(el('addCount').value || '1', 10);
+        const r = await api('/books/' + bookId + '/copies', {
+          method: 'POST',
+          body: { count: n, location: el('addLoc').value.trim() || null },
+        });
+        toast('已新增 ' + r.length + ' 个副本：' + r.map(x => x.barcode).join('、'), 'ok');
+        showDetail(bookId);
+        doSearch(searchPage);
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    window.delCopy = async function (copyId, bookId) {
+      if (!confirm('确定删除这个副本？\n会一并清掉它已归还的借阅记录。')) return;
+      try {
+        await api('/copies/' + copyId, { method: 'DELETE' });
+        toast('副本已删除', 'ok');
+        showDetail(bookId);
+        doSearch(searchPage);
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    // ---------- 编目 ----------
+    window.startEdit = async function (id) {
+      try {
+        const b = await api('/books/' + id);
+        editingId = id;
+        el('catalogTitle').textContent = '编辑图书：' + b.title;
+        el('btnCancelEdit').classList.remove('hidden');
+        el('f_title').value = b.title || '';
+        el('f_author').value = b.author || '';
+        el('f_publisher').value = b.publisher || '';
+        el('f_isbn').value = b.isbn || '';
+        el('f_clc').value = b.clc_code || '';
+        el('f_pubdate').value = b.pub_date ? String(b.pub_date).slice(0, 10) : '';
+        el('f_price').value = b.price === null || b.price === undefined ? '' : b.price;
+        el('f_summary').value = b.summary || '';
+        el('f_copies').value = 0;
+        el('f_copies').disabled = true;
+        el('f_location').value = '';
+        el('catalogMsg').innerHTML = '<div class="alert info">编辑模式下不能改副本数量，请到「详情」里增减副本。</div>';
+        switchView('catalog');
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    function resetCatalogForm() {
+      editingId = null;
+      el('catalogTitle').textContent = '图书录入';
+      el('btnCancelEdit').classList.add('hidden');
+      ['f_title', 'f_author', 'f_publisher', 'f_isbn', 'f_pubdate', 'f_price',
+       'f_summary', 'f_location'].forEach(i => el(i).value = '');
+      el('f_clc').value = '';
+      el('f_copies').value = 1;
+      el('f_copies').disabled = false;
+      el('catalogMsg').innerHTML = '';
+    }
+
+    el('btnCancelEdit').onclick = resetCatalogForm;
+
+    el('btnSaveBook').onclick = async () => {
+      const title = el('f_title').value.trim();
+      if (!title) { el('catalogMsg').innerHTML = '<div class="alert err">书名不能为空</div>'; return; }
+      const body = {
+        title,
+        author: el('f_author').value.trim() || null,
+        publisher: el('f_publisher').value.trim() || null,
+        isbn: el('f_isbn').value.trim() || null,
+        clc_code: el('f_clc').value || null,
+        pub_date: el('f_pubdate').value || null,
+        price: el('f_price').value === '' ? null : parseFloat(el('f_price').value),
+        summary: el('f_summary').value.trim() || null,
+      };
+      try {
+        if (editingId) {
+          await api('/books/' + editingId, { method: 'PUT', body });
+          el('catalogMsg').innerHTML = '<div class="alert ok">已保存修改</div>';
+          toast('已保存修改', 'ok');
+          resetCatalogForm();
+          switchView('search');
+          doSearch(searchPage);
+        } else {
+          const copiesRaw = el('f_copies').value.trim();
+          const copies = copiesRaw === '' ? 0 : Number(copiesRaw);
+          if (!Number.isInteger(copies) || copies < 0 || copies > 500) {
+            el('catalogMsg').innerHTML = '<div class="alert err">初始副本数量要填 0 ~ 500 之间的整数，' +
+              '当前是「' + esc(copiesRaw || '空') + '」。' + '</div>';
+            el('f_copies').focus();
+            return;
+          }
+          body.copies = copies;
+          body.location = el('f_location').value.trim() || null;
+          const r = await api('/books', { method: 'POST', body });
+          el('catalogMsg').innerHTML = '<div class="alert ok">录入成功：《' + esc(r.title) +
+            '》，共 ' + r.total_copies + ' 册，条码 ' +
+            esc(r.copies_list.map(c => c.barcode).join('、')) + '</div>';
+          resetCatalogForm();
+        }
+      } catch (err) {
+        el('catalogMsg').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    // ---------- 借还办理 ----------
+    async function doBorrowReturn(kind) {
+      const code = el('b_code').value.trim();
+      const user = el('b_user').value.trim();
+      el('borrowMsg').innerHTML = '';
+      if (!code) { el('borrowMsg').innerHTML = '<div class="alert err">请输入馆藏条码</div>'; return; }
+      try {
+        const r = await api(kind === 'borrow' ? '/borrow' : '/borrow/return', {
+          method: 'POST', body: { barcode: code, username: user || null },
+        });
+        el('borrowMsg').innerHTML = '<div class="alert ok">' + esc(r.message) + '</div>';
+        el('b_code').value = '';
+        el('b_code').focus();
+      } catch (err) {
+        el('borrowMsg').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+        el('b_code').select();
+      }
+    }
+    el('btnBorrow').onclick = () => doBorrowReturn('borrow');
+    el('btnReturn').onclick = () => doBorrowReturn('return');
+    el('b_code').addEventListener('keydown', e => { if (e.key === 'Enter') doBorrowReturn('borrow'); });
+
+    // ---------- 借阅记录 ----------
+    async function queryRecords(page) {
+      recordPage = page || 1;
+      const tbody = el('recordRows');
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">查询中…</td></tr>';
+      try {
+        const r = await api('/borrow/records' + qs({
+          keyword: el('r_kw').value.trim(), status: el('r_status').value,
+          page: recordPage, size: 20,
+        }));
+        tbody.innerHTML = r.items.length ? r.items.map(x => `<tr>
+          <td>${esc(x.real_name)}<div class="muted small">${esc(x.username)}</div></td>
+          <td>${esc(x.title)}</td><td class="muted small">${esc(x.barcode)}</td>
+          <td>${fmtDate(x.borrow_at)}</td>
+          <td${x.overdue_days > 0 ? ' style="color:var(--danger);font-weight:600"' : ''}>${fmtDate(x.due_at)}</td>
+          <td>${x.return_at ? fmtDate(x.return_at) : '—'}</td>
+          <td>${x.return_at ? '<span class="tag">已归还</span>'
+                : x.overdue_days > 0 ? '<span class="tag danger">逾期 ' + x.overdue_days + ' 天</span>'
+                : '<span class="tag ok">在借中</span>'}</td>
+        </tr>`).join('') : '<tr><td colspan="7" class="empty">没有记录</td></tr>';
+        renderPager('recordPager', r.total, r.page, r.size, queryRecords);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+    }
+    el('btnQueryRecords').onclick = () => queryRecords(1);
+    el('r_kw').addEventListener('keydown', e => { if (e.key === 'Enter') queryRecords(1); });
+
+    // ---------- 逾期 ----------
+    async function loadOverdue() {
+      const tbody = el('overdueRows');
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">加载中…</td></tr>';
+      try {
+        const r = await api('/borrow/overdue?size=200');
+        tbody.innerHTML = r.items.length ? r.items.map(x => `<tr>
+          <td>${esc(x.real_name)}<div class="muted small">${esc(x.username)}</div></td>
+          <td>${esc(x.title)}</td><td class="muted small">${esc(x.barcode)}</td>
+          <td>${fmtDate(x.due_at)}</td>
+          <td><span class="tag danger">${x.overdue_days} 天</span></td>
+        </tr>`).join('') : '<tr><td colspan="5" class="empty">没有逾期未还的图书</td></tr>';
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+    }
+    el('btnReloadOverdue').onclick = loadOverdue;
+
+    // ---------- 统计 ----------
+    async function loadStats() {
+      const box = el('statBox');
+      box.innerHTML = '<span class="muted">加载中…</span>';
+      try {
+        const s = await api('/stats/overview');
+        const items = [
+          ['馆藏种数', s.total_books], ['馆藏总册数', s.total_copies],
+          ['在馆可借', s.available_copies], ['已借出', s.borrowed_copies],
+          ['读者总数', s.total_users], ['其中学生', s.total_students],
+          ['其中教师', s.total_teachers], ['当前在借', s.active_borrows],
+          ['逾期未还', s.overdue_count], ['今日借出', s.today_borrows],
+          ['今日归还', s.today_returns],
+        ];
+        box.innerHTML = items.map(([lbl, num]) => {
+          const danger = lbl === '逾期未还' && num > 0;
+          return `<div class="stat"><div class="num"${danger ? ' style="color:var(--danger)"' : ''}>${num}</div>
+            <div class="lbl">${lbl}</div></div>`;
+        }).join('');
+      } catch (err) { box.innerHTML = '<div class="alert err">' + esc(err.message) + '</div>'; }
+    }
+    el('btnReloadStats').onclick = loadStats;
+
+    // ---------- 用户管理 ----------
+    el('btnShowImport').onclick = () => el('importBox').classList.toggle('hidden');
+    el('btnShowCreate').onclick = () => el('createBox').classList.toggle('hidden');
+
+    el('btnCreateUser').onclick = async () => {
+      const body = {
+        username: el('u_username').value.trim(),
+        password: el('u_password').value,
+        real_name: el('u_realname').value.trim(),
+        role: el('u_role').value,
+        dept: el('u_dept').value.trim() || null,
+        max_borrow: el('u_max').value === '' ? null : parseInt(el('u_max').value, 10),
+      };
+      if (!body.username || !body.real_name) {
+        el('usersMsg').innerHTML = '<div class="alert err">学号/工号和姓名必填</div>'; return;
+      }
+      try {
+        await api('/users', { method: 'POST', body });
+        el('usersMsg').innerHTML = '<div class="alert ok">已创建用户 ' + esc(body.username) + '</div>';
+        ['u_username', 'u_realname', 'u_dept', 'u_max'].forEach(i => el(i).value = '');
+        queryUsers(1);
+      } catch (err) {
+        el('usersMsg').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    el('btnImport').onclick = () => once(el('btnImport'), async () => {
+      const f = el('csvFile').files[0];
+      if (!f) { el('importResult').innerHTML = '<div class="alert err">请先选择 CSV 文件</div>'; return; }
+      const fd = new FormData();
+      fd.append('file', f);
+      el('importResult').innerHTML = '<p class="muted">导入中，人数较多时需要一会儿…</p>';
+      try {
+        const res = await fetch(API_BASE + '/users/import', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + getToken() },
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '导入失败');
+        el('importResult').innerHTML = '<div class="alert ok">成功导入 ' + data.created +
+          ' 人，跳过 ' + data.skipped + ' 行' +
+          (data.errors.length ? '<div class="small mt">' + data.errors.map(esc).join('<br>') + '</div>' : '') +
+          '</div>';
+        queryUsers(1);
+      } catch (err) {
+        el('importResult').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    }, '导入中…');
+
+    // ---------- 范围生成学生账号 ----------
+    el('btnShowRange').onclick = () => {
+      el('rangeBox').classList.toggle('hidden');
+      renderRangePreview();
+    };
+    el('btnShowPaste').onclick = () => el('pasteBox').classList.toggle('hidden');
+
+    function renderRangePreview() {
+      const year = parseInt(el('rg_year').value, 10);
+      const classes = parseInt(el('rg_classes').value, 10);
+      const per = parseInt(el('rg_per').value, 10);
+      const box = el('rg_preview');
+      if (!year || !classes || !per || year < 2000 || year > 2100 ||
+          classes < 1 || classes > 99 || per < 1 || per > 99) {
+        box.textContent = '请填写有效的届数、班级数量与每班人数。';
+        return;
+      }
+      const pad = n => String(n).padStart(2, '0');
+      box.textContent = '将生成 ' + (classes * per) + ' 个账号：' +
+        year + pad(1) + pad(1) + ' ~ ' + year + pad(classes) + pad(per) +
+        '（上限 ' + 2000 + ' 个）';
+    }
+    ['rg_year', 'rg_classes', 'rg_per'].forEach(id => {
+      el(id).addEventListener('input', renderRangePreview);
+    });
+    renderRangePreview();
+
+    function showBulkResult(boxId, r) {
+      el(boxId).innerHTML =
+        '<div class="alert ' + (r.created ? 'ok' : 'warn') + '">成功创建 ' + r.created +
+        ' 个账号，跳过 ' + r.skipped + ' 个。' +
+        (r.created ? '默认密码与学号相同，请提醒学生首次登录后修改。' : '') + '</div>' +
+        (r.errors.length
+          ? '<div class="alert warn"><strong>跳过的明细：</strong><div class="small mt">' +
+            r.errors.map(esc).join('<br>') + '</div></div>'
+          : '');
+    }
+
+    el('btnRange').onclick = () => once(el('btnRange'), async () => {
+      const body = {
+        year: parseInt(el('rg_year').value, 10),
+        class_count: parseInt(el('rg_classes').value, 10),
+        per_class: parseInt(el('rg_per').value, 10),
+        dept: el('rg_dept').value.trim() || null,
+      };
+      if (!body.year || !body.class_count || !body.per_class) {
+        el('rangeResult').innerHTML = '<div class="alert err">届数、班级数量、每班人数都要填</div>';
+        return;
+      }
+      if (body.class_count * body.per_class > 2000) {
+        el('rangeResult').innerHTML = '<div class="alert err">一次最多生成 2000 个账号</div>';
+        return;
+      }
+      el('rangeResult').innerHTML = '<p class="muted small">生成中…</p>';
+      try {
+        const r = await api('/users/batch-range', { method: 'POST', body });
+        showBulkResult('rangeResult', r);
+        queryUsers(1);
+      } catch (err) {
+        el('rangeResult').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    }, '生成中…');
+
+    el('btnPaste').onclick = () => once(el('btnPaste'), async () => {
+      const text = el('ps_text').value;
+      if (!text.trim()) {
+        el('pasteResult').innerHTML = '<div class="alert err">请先粘贴名单</div>';
+        return;
+      }
+      el('pasteResult').innerHTML = '<p class="muted small">生成中…</p>';
+      try {
+        const r = await api('/users/batch-paste', {
+          method: 'POST',
+          body: { text, dept: el('ps_dept').value.trim() || null },
+        });
+        showBulkResult('pasteResult', r);
+        queryUsers(1);
+      } catch (err) {
+        el('pasteResult').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    }, '生成中…');
+
+    // ---------- 教师邀请码 ----------
+    const INVITE_STATUS = {
+      unused: '<span class="tag ok">未使用</span>',
+      used: '<span class="tag info">已使用</span>',
+      expired: '<span class="tag danger">已过期</span>',
+    };
+
+    el('btnShowInviteCreate').onclick = () => el('inviteCreateBox').classList.toggle('hidden');
+
+    el('btnCreateInvites').onclick = async () => {
+      const body = {
+        count: parseInt(el('iv_count').value, 10) || 1,
+        valid_days: parseInt(el('iv_days').value, 10) || 7,
+        note: el('iv_note').value.trim() || null,
+      };
+      el('inviteCreateResult').innerHTML = '<p class="muted small">生成中…</p>';
+      try {
+        const list = await api('/invites', { method: 'POST', body });
+        el('inviteCreateResult').innerHTML =
+          '<div class="alert ok">已生成 ' + list.length + ' 个邀请码，有效期至 ' +
+          esc(fmtDate(list[0].expires_at)) + '：</div>' +
+          '<div class="alert info" style="font-size:15px;letter-spacing:1px">' +
+          list.map(x => esc(x.code)).join('<br>') + '</div>';
+        el('iv_note').value = '';
+        queryInvites(1);
+      } catch (err) {
+        el('inviteCreateResult').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    async function queryInvites(page) {
+      const tbody = el('inviteRows');
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">加载中…</td></tr>';
+      try {
+        const r = await api('/invites' + qs({
+          status: el('iv_filter').value, page: page || 1, size: 20,
+        }));
+        tbody.innerHTML = r.items.length ? r.items.map(x => `<tr>
+          <td><code>${esc(x.code)}</code></td>
+          <td>${esc(x.note || '—')}</td>
+          <td>${INVITE_STATUS[x.status] || esc(x.status)}</td>
+          <td>${x.expires_at ? fmtDateTime(x.expires_at) : '永久'}</td>
+          <td>${esc(x.used_by_name || '—')}${x.used_at ? '<div class="muted small">' + fmtDateTime(x.used_at) + '</div>' : ''}</td>
+          <td>${x.status === 'used' ? ''
+                : `<button class="ghost sm" onclick="voidInvite(${x.id},'${esc(x.code)}')">作废</button>`}</td>
+        </tr>`).join('') : '<tr><td colspan="6" class="empty">没有邀请码</td></tr>';
+        renderPager('invitePager', r.total, r.page, r.size, queryInvites);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+    }
+    el('btnQueryInvites').onclick = () => queryInvites(1);
+
+    window.voidInvite = async function (id, code) {
+      if (!confirm('确定作废邀请码 ' + code + '？作废后无法再用于注册。')) return;
+      try {
+        await api('/invites/' + id, { method: 'DELETE' });
+        toast('邀请码已作废', 'ok');
+        queryInvites(1);
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    async function queryUsers(page) {
+      userPage = page || 1;
+      const tbody = el('userRows');
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">加载中…</td></tr>';
+      try {
+        const r = await api('/users' + qs({
+          q: el('u_kw').value.trim(), role: el('u_filterRole').value,
+          page: userPage, size: 20,
+        }));
+        tbody.innerHTML = r.items.length ? r.items.map(u => {
+          // 列表由后端过滤掉了管理员账号，所以这里列出的每一行都能禁用/重置密码/删除
+          return `<tr>
+          <td><input type="checkbox" class="u-chk" data-uid="${u.id}" style="width:auto"></td>
+          <td>${esc(u.username)}</td><td>${esc(u.real_name)}</td>
+          <td>${esc(ROLE_CN[u.role] || u.role)}</td>
+          <td>${esc(u.dept || '—')}</td><td>${u.max_borrow}</td>
+          <td>${u.status === 1 ? '<span class="tag ok">正常</span>' : '<span class="tag danger">已禁用</span>'}</td>
+          <td>
+            <button class="ghost sm" onclick="toggleUser(${u.id},${u.status})">${u.status === 1 ? '禁用' : '启用'}</button>
+            <button class="ghost sm" onclick="resetPwd(${u.id},'${esc(u.real_name)}')">重置密码</button>
+            <button class="ghost sm" onclick="delUser(${u.id},'${esc(u.username)}')">删除</button>
+          </td>
+        </tr>`;
+        }).join('') : '<tr><td colspan="8" class="empty">没有用户</td></tr>';
+        renderPager('userPager', r.total, r.page, r.size, queryUsers);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+      refreshUserPicked();
+    }
+    el('btnQueryUsers').onclick = () => queryUsers(1);
+    el('u_kw').addEventListener('keydown', e => { if (e.key === 'Enter') queryUsers(1); });
+
+    // ---------- 账号批量删除 ----------
+    function pickedUserIds() {
+      return Array.from(el('userRows').querySelectorAll('.u-chk:checked'))
+        .map(c => parseInt(c.dataset.uid, 10));
+    }
+    function refreshUserPicked() {
+      const all = el('userRows').querySelectorAll('.u-chk');
+      const picked = el('userRows').querySelectorAll('.u-chk:checked');
+      el('uPickedCount').textContent = '已选 ' + picked.length + ' 个';
+      el('chkAllUsers').checked = all.length > 0 && picked.length === all.length;
+    }
+    el('userRows').addEventListener('change', e => {
+      if (e.target.classList.contains('u-chk')) refreshUserPicked();
+    });
+    el('chkAllUsers').onclick = e => {
+      el('userRows').querySelectorAll('.u-chk').forEach(c => { c.checked = e.target.checked; });
+      refreshUserPicked();
+    };
+
+    el('btnBatchDelUsers').onclick = () => once(el('btnBatchDelUsers'), async () => {
+      const ids = pickedUserIds();
+      if (!ids.length) { toast('请先勾选要删除的账号', 'warn'); return; }
+      // 确认框放在禁用之后：连点时第二次点击会直接返回，不会弹出第二个确认框
+      if (!confirm('确定删除选中的 ' + ids.length + ' 个账号？\n有书未归还的会自动跳过，并在下方列出原因。\n删除会同时清掉这些账号已归还的借阅记录。')) return;
+      try {
+        const r = await api('/users/batch-delete', { method: 'POST', body: { ids } });
+        await queryUsers(userPage);
+        el('batchUserResult').innerHTML =
+          '<div class="alert ' + (r.deleted ? 'ok' : 'warn') + '">已删除 ' + r.deleted +
+          ' 个账号' + (r.skipped.length ? '，跳过 ' + r.skipped.length + ' 个' : '') + '。</div>' +
+          (r.skipped.length
+            ? '<div class="alert warn"><strong>以下账号未删除（列表里仍在）：</strong><div class="small mt">' +
+              r.skipped.map(s => esc((s.title || ('编号 ' + s.id)) + '：' + s.reason)).join('<br>') +
+              '</div></div>'
+            : '');
+      } catch (err) {
+        el('batchUserResult').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    }, '删除中…');
+
+    window.toggleUser = async function (id, status) {
+      try {
+        await api('/users/' + id, { method: 'PUT', body: { status: status === 1 ? 0 : 1 } });
+        toast('已更新用户状态', 'ok');
+        queryUsers(userPage);
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    window.resetPwd = async function (id, name) {
+      const p = prompt('为 ' + name + ' 设置新密码（至少 6 位）：', '123456');
+      if (!p) return;
+      try {
+        await api('/users/' + id + '/reset-password', { method: 'POST', body: { new_password: p } });
+        toast('密码已重置', 'ok');
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    window.delUser = async function (id, username) {
+      if (!confirm('确定删除用户 ' + username + '？')) return;
+      try {
+        await api('/users/' + id, { method: 'DELETE' });
+        toast('用户已删除', 'ok');
+        queryUsers(userPage);
+      } catch (err) { toast(err.message, 'err'); }
+    };
+
+    // ---------- 改密码 ----------
+    el('btnPwd').onclick = async () => {
+      const a = el('oldPwd').value, b = el('newPwd').value, c = el('newPwd2').value;
+      el('pwdMsg').innerHTML = '';
+      if (b.length < 6) { el('pwdMsg').innerHTML = '<div class="alert err">新密码至少 6 位</div>'; return; }
+      if (b !== c) { el('pwdMsg').innerHTML = '<div class="alert err">两次输入的新密码不一致</div>'; return; }
+      try {
+        await api('/auth/change-password', { method: 'POST', body: { old_password: a, new_password: b } });
+        el('pwdMsg').innerHTML = '<div class="alert ok">密码已修改</div>';
+        el('oldPwd').value = el('newPwd').value = el('newPwd2').value = '';
+      } catch (err) {
+        el('pwdMsg').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    // ---------- 分页 ----------
+    function renderPager(id, total, page, size, fn) {
+      const pages = Math.max(1, Math.ceil(total / size));
+      const box = el(id);
+      if (pages <= 1) { box.innerHTML = ''; return; }
+      box.innerHTML = `
+        <button class="sm" ${page <= 1 ? 'disabled' : ''} onclick="__pg(${page - 1})">上一页</button>
+        <span class="muted small">第 ${page} / ${pages} 页（共 ${total} 条）</span>
+        <button class="sm" ${page >= pages ? 'disabled' : ''} onclick="__pg(${page + 1})">下一页</button>`;
+      window.__pg = fn;
+    }
+
+    el('btnSearch').onclick = () => doSearch(1);
+    el('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(1); });
+    el('cat').onchange = () => doSearch(1);
+    el('onlyAvail').onchange = () => doSearch(1);
+  </script>
+</body>
+</html>

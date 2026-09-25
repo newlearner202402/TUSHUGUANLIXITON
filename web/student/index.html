@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>学生端 - 图书管理系统</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">图书管理系统 · 学生端</div>
+    <span class="badge" id="whoami">—</span>
+    <div class="spacer"></div>
+    <button class="sm" onclick="logout()">退出登录</button>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <button data-view="search" class="active">馆藏检索</button>
+      <button data-view="mine">我的借阅</button>
+      <button data-view="pwd">修改密码</button>
+    </div>
+
+    <div class="main">
+      <div id="toast"></div>
+
+      <!-- 馆藏检索 -->
+      <div id="view-search">
+        <div class="card">
+          <h2>馆藏检索</h2>
+          <p class="muted small">输入书名、作者、出版社或 ISBN 查询；在馆的书可以直接点「借书」借到自己名下。
+          归还到「我的借阅」里点「还书」即可。</p>
+          <div class="row mt">
+            <input id="q" placeholder="书名 / 作者 / 出版社 / ISBN" style="flex:1;min-width:220px"
+                   autocomplete="off">
+            <select id="cat" style="width:200px"><option value="">全部分类</option></select>
+            <label class="row" style="margin:0;white-space:nowrap">
+              <input type="checkbox" id="onlyAvail" style="width:auto"> 只看在馆
+            </label>
+            <button class="primary" id="btnSearch">搜索</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>检索结果</h3>
+            <span class="muted small" id="searchCount"></span>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>书名</th><th>作者</th><th>出版社</th><th>分类</th><th>在馆</th><th></th>
+            </tr></thead>
+            <tbody id="searchRows"><tr><td colspan="6" class="empty">输入关键词后点击搜索</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="searchPager"></div>
+        </div>
+      </div>
+
+      <!-- 我的借阅 -->
+      <div id="view-mine" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>我的借阅</h2>
+            <div class="spacer"></div>
+            <select id="myStatus" style="width:140px">
+              <option value="">全部</option>
+              <option value="borrowed">在借中</option>
+              <option value="overdue">已逾期</option>
+              <option value="returned">已归还</option>
+            </select>
+          </div>
+          <div id="mySummary" class="stat-grid mb"></div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>书名</th><th>条码</th><th>借出日期</th><th>应还日期</th>
+              <th>状态</th><th>续借次数</th><th>操作</th>
+            </tr></thead>
+            <tbody id="myRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+          </table></div>
+          <div class="pager" id="myPager"></div>
+        </div>
+      </div>
+
+      <!-- 修改密码 -->
+      <div id="view-pwd" class="hidden">
+        <div class="card" style="max-width:460px">
+          <h2>修改密码</h2>
+          <div id="pwdMsg"></div>
+          <div class="field"><label>原密码</label>
+            <input type="password" id="oldPwd" autocomplete="off"></div>
+          <div class="field"><label>新密码（至少 6 位）</label>
+            <input type="password" id="newPwd" autocomplete="new-password"></div>
+          <div class="field"><label>确认新密码</label>
+            <input type="password" id="newPwd2" autocomplete="new-password"></div>
+          <button class="primary" id="btnPwd">确认修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 图书详情弹窗 -->
+  <div id="modal" class="hidden" style="position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px">
+    <div class="card" style="max-width:640px;width:100%;max-height:80vh;overflow:auto">
+      <div class="card-head"><h3 id="modalTitle">图书详情</h3><div class="spacer"></div>
+        <button class="sm" onclick="el('modal').classList.add('hidden')">关闭</button></div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script>
+    let me = null;
+    let searchPage = 1;
+    let myPage = 1;
+
+    const STATUS_TAG = {
+      available: '<span class="tag ok">在馆可借</span>',
+      borrowed: '<span class="tag warn">已借出</span>',
+      lost: '<span class="tag danger">遗失</span>',
+      repair: '<span class="tag warn">修补中</span>',
+      discarded: '<span class="tag">已注销</span>',
+    };
+
+    document.querySelectorAll('.sidebar button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ['search', 'mine', 'pwd'].forEach(v => {
+          el('view-' + v).classList.toggle('hidden', v !== btn.dataset.view);
+        });
+        if (btn.dataset.view === 'mine') loadMine();
+      };
+    });
+
+    (async function init() {
+      me = await requireLogin('student');
+      if (!me) return;
+      el('whoami').textContent = me.real_name + '（' + me.username + '）';
+
+      try {
+        const cats = await api('/categories');
+        el('cat').innerHTML = '<option value="">全部分类</option>' +
+          cats.map(c => `<option value="${esc(c.code)}">${esc(c.code)} ${esc(c.name)}</option>`).join('');
+      } catch (e) { /* 分类拉不到不影响检索 */ }
+    })();
+
+    // ---------- 检索 ----------
+    async function doSearch(page) {
+      searchPage = page || 1;
+      const tbody = el('searchRows');
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">查询中…</td></tr>';
+      try {
+        const r = await api('/books' + qs({
+          q: el('q').value.trim(),
+          category: el('cat').value,
+          only_available: el('onlyAvail').checked,
+          page: searchPage, size: 15,
+        }));
+        el('searchCount').textContent = '共 ' + r.total + ' 种';
+        if (!r.items.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">没有找到符合条件的图书</td></tr>';
+        } else {
+          tbody.innerHTML = r.items.map(b => `<tr>
+            <td><strong>${esc(b.title)}</strong>${b.isbn ? '<div class="muted small">ISBN ' + esc(b.isbn) + '</div>' : ''}</td>
+            <td>${esc(b.author || '—')}</td>
+            <td>${esc(b.publisher || '—')}</td>
+            <td>${b.clc_code ? esc(b.clc_code) + '<div class="muted small">' + esc(b.category_name || '') + '</div>' : '—'}</td>
+            <td>${b.available_copies > 0
+                  ? '<span class="tag ok">在馆 ' + b.available_copies + '/' + b.total_copies + '</span>'
+                  : '<span class="tag danger">已全部借出</span>'}</td>
+            <td>
+              ${b.available_copies > 0
+                  ? `<button class="primary sm" onclick="borrowBook(${b.id})">借书</button> `
+                  : ''}<button class="ghost sm" onclick="showDetail(${b.id})">详情</button>
+            </td>
+          </tr>`).join('');
+        }
+        renderPager('searchPager', r.total, r.page, r.size, doSearch);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+    }
+
+    // 自助借书：只知道书名，具体借哪一册由服务端挑一册在馆的
+    // 借书会立刻占用一个在馆名额，而且学生端没有还书入口（还书要去服务台），
+    // 所以先确认一次，避免误点之后自己撤不回来。
+    window.borrowBook = async function (id) {
+      if (!confirm('确认把这本书借到你的名下？')) return;
+      try {
+        const r = await api('/borrow/by-book', { method: 'POST', body: { book_id: id } });
+        toast(r.message, 'ok');
+        doSearch(searchPage);
+      } catch (err) {
+        toast(err.message, 'err');
+      }
+    };
+
+    window.showDetail = async function (id) {
+      el('modalTitle').textContent = '图书详情';
+      el('modalBody').innerHTML = '<p class="muted">加载中…</p>';
+      el('modal').classList.remove('hidden');
+      try {
+        const b = await api('/books/' + id);
+        el('modalTitle').textContent = b.title;
+        el('modalBody').innerHTML = `
+          <p class="muted">${esc(b.author || '未知作者')} · ${esc(b.publisher || '未知出版社')}
+             ${b.pub_date ? ' · ' + fmtDate(b.pub_date) : ''}
+             ${b.price ? ' · 定价 ' + b.price + ' 元' : ''}</p>
+          <p class="muted small">ISBN ${esc(b.isbn || '—')} ｜ 中图法 ${esc(b.clc_code || '—')}
+             ${b.category_name ? '（' + esc(b.category_name) + '）' : ''}</p>
+          ${b.summary ? '<p>' + esc(b.summary) + '</p>' : ''}
+          <h4 class="mt">馆藏 ${b.available_copies}/${b.total_copies} 册在馆</h4>
+          <div class="table-wrap"><table>
+            <thead><tr><th>条码</th><th>馆藏位置</th><th>状态</th></tr></thead>
+            <tbody>${b.copies_list.map(c => `<tr>
+              <td>${esc(c.barcode)}</td><td>${esc(c.location || '—')}</td>
+              <td>${STATUS_TAG[c.status] || esc(c.status)}</td></tr>`).join('')}</tbody>
+          </table></div>`;
+      } catch (err) {
+        el('modalBody').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    // ---------- 我的借阅 ----------
+    async function loadMine(page) {
+      myPage = page || 1;
+      const tbody = el('myRows');
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+      try {
+        const r = await api('/borrow/my' + qs({
+          status: el('myStatus').value, page: myPage, size: 15,
+        }));
+        const borrowing = r.items.filter(x => !x.return_at).length;
+        const overdue = r.items.filter(x => x.overdue_days > 0).length;
+        el('mySummary').innerHTML = `
+          <div class="stat"><div class="num">${borrowing}</div><div class="lbl">当前在借</div></div>
+          <div class="stat"><div class="num" style="color:${overdue ? 'var(--danger)' : 'inherit'}">${overdue}</div>
+            <div class="lbl">其中逾期</div></div>
+          <div class="stat"><div class="num">${me.max_borrow !== undefined ? me.max_borrow : '—'}</div>
+            <div class="lbl">可借上限</div></div>`;
+
+        if (!r.items.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无借阅记录</td></tr>';
+        } else {
+          tbody.innerHTML = r.items.map(x => {
+            const active = !x.return_at;
+            const od = x.overdue_days > 0;
+            const tag = !active ? '<span class="tag">已归还</span>'
+              : od ? `<span class="tag danger">逾期 ${x.overdue_days} 天</span>`
+                   : '<span class="tag ok">在借中</span>';
+            return `<tr>
+              <td><strong>${esc(x.title)}</strong></td>
+              <td class="muted small">${esc(x.barcode)}</td>
+              <td>${fmtDate(x.borrow_at)}</td>
+              <td${od ? ' style="color:var(--danger);font-weight:600"' : ''}>${fmtDate(x.due_at)}</td>
+              <td>${tag}</td>
+              <td class="muted small">${x.renew_count} 次</td>
+              <td>${active
+                  ? `<button class="ghost sm" onclick="renew(${x.id})">续借</button>
+                     <button class="primary sm" onclick="returnBook('${esc(x.barcode)}')">还书</button>`
+                  : ''}</td>
+            </tr>`;
+          }).join('');
+        }
+        renderPager('myPager', r.total, r.page, r.size, loadMine);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">' + esc(err.message) + '</td></tr>';
+      }
+    }
+
+    // 还书：扫书上的条码那是服务台的做法，学生在「我的借阅」里点一下就行。
+    // 服务端是按条码找当前这条未归还记录，并且只允许还自己借的（还别人的会被 403 拦下）。
+    window.returnBook = async function (barcode) {
+      if (!confirm('确认归还条码 ' + barcode + ' 的这册书？')) return;
+      try {
+        const r = await api('/borrow/return', { method: 'POST', body: { barcode } });
+        toast(r.message, 'ok');
+        loadMine(myPage);
+      } catch (err) {
+        toast(err.message, 'err');
+      }
+    };
+
+    window.renew = async function (id) {
+      try {
+        const r = await api('/borrow/' + id + '/renew', { method: 'POST' });
+        toast('续借成功，新的应还日期：' + fmtDate(r.due_at), 'ok');
+        loadMine(myPage);
+      } catch (err) {
+        toast(err.message, 'err');
+      }
+    };
+
+    el('myStatus').onchange = () => loadMine(1);
+
+    // ---------- 修改密码 ----------
+    el('btnPwd').onclick = async () => {
+      const a = el('oldPwd').value, b = el('newPwd').value, c = el('newPwd2').value;
+      el('pwdMsg').innerHTML = '';
+      if (b.length < 6) { el('pwdMsg').innerHTML = '<div class="alert err">新密码至少 6 位</div>'; return; }
+      if (b !== c) { el('pwdMsg').innerHTML = '<div class="alert err">两次输入的新密码不一致</div>'; return; }
+      try {
+        await api('/auth/change-password', {
+          method: 'POST', body: { old_password: a, new_password: b },
+        });
+        el('pwdMsg').innerHTML = '<div class="alert ok">密码已修改</div>';
+        el('oldPwd').value = el('newPwd').value = el('newPwd2').value = '';
+      } catch (err) {
+        el('pwdMsg').innerHTML = '<div class="alert err">' + esc(err.message) + '</div>';
+      }
+    };
+
+    // ---------- 分页 ----------
+    function renderPager(id, total, page, size, fn) {
+      const pages = Math.max(1, Math.ceil(total / size));
+      const box = el(id);
+      if (pages <= 1) { box.innerHTML = ''; return; }
+      box.innerHTML = `
+        <button class="sm" ${page <= 1 ? 'disabled' : ''} onclick="__pg(${page - 1})">上一页</button>
+        <span class="muted small">第 ${page} / ${pages} 页</span>
+        <button class="sm" ${page >= pages ? 'disabled' : ''} onclick="__pg(${page + 1})">下一页</button>`;
+      window.__pg = fn;
+    }
+
+    el('btnSearch').onclick = () => doSearch(1);
+    el('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(1); });
+    el('cat').onchange = () => doSearch(1);
+    el('onlyAvail').onchange = () => doSearch(1);
+  </script>
+</body>
+</html>

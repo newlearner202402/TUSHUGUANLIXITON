@@ -1,0 +1,25 @@
+# ---- 依赖与虚拟环境 ----
+# 75MB，用 requirements.txt 就能还原，不入库
+.venv/
+venv/
+
+# ---- 便携版 MySQL ----
+# 1.2GB 的运行时目录（含数据目录 data/，以及 367MB 的 mysqld.pdb），不入库。
+# 别人克隆后自己装 MySQL 或用便携版，再跑 scripts/init-db.bat 建库即可。
+mysql/
+
+# ---- 密钥与本机配置 ----
+# 里面有数据库密码和 JWT 密钥，只提交 .env.example
+.env
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+
+# ---- 日志与临时文件 ----
+*.log
+*.tmp
+
+# ---- 编辑器 / IDE 工作区 ----
+.vscode/
+.trae/
